@@ -5,6 +5,7 @@ import { auth } from "./firebase.config";
 // Pages
 import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
+import ProfileSetupPage from "./pages/ProfileSetupPage";
 import DashboardPage from "./pages/Dashboard";
 import JobDashboard from "./pages/JobDashboard";
 import JobSearchComponent from "./pages/JobSearchComponents";
@@ -49,6 +50,10 @@ function App() {
         <Route
           path="/signup"
           element={user ? <Navigate to="/dashboard" /> : <SignUpPage />}
+        />
+        <Route
+          path="/profile-setup"
+          element={user ? <ProfileSetupPage /> : <Navigate to="/signin" />}
         />
         <Route
           path="/dashboard"
