@@ -30,7 +30,38 @@ export const usersCollection = collection(db, "users");
 export const jobPostingsCollection = collection(db, "jobPostings");
 export const skillTrendsCollection = collection(db, "skillTrends");
 export const userRecommendationsCollection = collection(db, "userRecommendations");
+export const searchHistoryCollection = collection(db, "searchHistory");
+export const savedJobsCollection = collection(db, "savedJobs");
 
-// The rest of your Firebase config remains the same...
+// Save search history function
+export const saveSearchHistory = async (userId, searchQuery, metadata = {}) => {
+  try {
+    const searchData = {
+      userId,
+      searchQuery,
+      timestamp: new Date(),
+      ...metadata
+    };
+    
+    await addDoc(searchHistoryCollection, searchData);
+  } catch (error) {
+    console.error("Error saving search history:", error);
+  }
+};
+
+// Save job function
+export const saveJob = async (userId, jobData) => {
+  try {
+    const jobToSave = {
+      userId,
+      ...jobData,
+      savedAt: new Date()
+    };
+    
+    await addDoc(savedJobsCollection, jobToSave);
+  } catch (error) {
+    console.error("Error saving job:", error);
+  }
+};
 
 export default app;
