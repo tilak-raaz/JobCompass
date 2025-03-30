@@ -1,0 +1,30 @@
+import { fetchRecommendedJobs } from "../firebase.config";
+
+// In the handleSubmit function
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setSaving(true);
+  setError("");
+
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("User not authenticated");
+
+    // Save user profile
+    await setDoc(doc(db, "users", currentUser.uid), {
+      ...formData,
+      email: currentUser.email,
+      profileCompleted: true, // Mark profile as completed
+      updatedAt: new Date()
+    }, { merge: true });
+
+    // 🔥 Fetch job recommendations after profile setup
+    await fetchRecommendedJobs(currentUser.uid);
+
+    setHasCompletedProfile(true);
+    navigate("/dashboard");
+  } catch (error) {
+    setError("Failed to save profile: " + error.message);
+    setSaving(false);
+  }
+};

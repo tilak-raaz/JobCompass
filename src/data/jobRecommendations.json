@@ -1,0 +1,32 @@
+[
+    {
+      "title": "Software Engineer",
+      "company_name": "TechCorp",
+      "location": "San Francisco, CA",
+      "skills": ["JavaScript", "React", "Node.js"]
+    },
+    {
+      "title": "Data Scientist",
+      "company_name": "DataWorks",
+      "location": "New York, NY",
+      "skills": ["Python", "Machine Learning", "Data Analysis"]
+    },
+    {
+      "title": "UI/UX Designer",
+      "company_name": "DesignHub",
+      "location": "Remote",
+      "skills": ["Adobe XD", "Figma", "User Research"]
+    },
+    {
+      "title": "Marketing Specialist",
+      "company_name": "MarketGuru",
+      "location": "Chicago, IL",
+      "skills": ["SEO", "Content Marketing", "Google Analytics"]
+    },
+    {
+      "title": "Project Manager",
+      "company_name": "ManageIt",
+      "location": "Austin, TX",
+      "skills": ["Agile", "Scrum", "Project Planning"]
+    }
+  ]
