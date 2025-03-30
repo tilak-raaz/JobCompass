@@ -30,6 +30,23 @@ export const usersCollection = collection(db, "users");
 export const jobPostingsCollection = collection(db, "jobPostings");
 export const skillTrendsCollection = collection(db, "skillTrends");
 export const userRecommendationsCollection = collection(db, "userRecommendations");
+export const searchHistoryCollection = collection(db, "searchHistory");
+
+// Save search history function
+export const saveSearchHistory = async (userId, searchQuery, metadata = {}) => {
+  try {
+    const searchData = {
+      userId,
+      searchQuery,
+      timestamp: new Date(),
+      ...metadata
+    };
+    
+    await addDoc(searchHistoryCollection, searchData);
+  } catch (error) {
+    console.error("Error saving search history:", error);
+  }
+};
 
 // The rest of your Firebase config remains the same...
 
