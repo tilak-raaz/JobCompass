@@ -64,9 +64,9 @@ const JobResults = ({ selectedSkills = [], filters, jobs = [], isLoading, error 
 
       <div className="grid gap-6">
         <AnimatePresence>
-          {sortedJobs.map((job) => (
+          {sortedJobs.map((job, index) => (
             <motion.div
-              key={job.id}
+              key={job.id || `job-${index}-${Date.now()}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}

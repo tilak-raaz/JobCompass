@@ -87,102 +87,82 @@ const mockJobs = [
   }
 ];
 
+// Counter for generating unique IDs
+let idCounter = 0;
+
 export const searchJobs = async (query, location = '') => {
   if (!query.trim()) {
     throw new Error('Search query is required');
   }
 
-  // Return mock data instead of making API call
-  console.log('Using mock data for testing');
-  
   try {
-    // Filter mock jobs based on query and location
-    const filteredJobs = mockJobs.filter(job => {
-      const searchText = `${job.title} ${job.company_name} ${job.location} ${job.description}`.toLowerCase();
-      const searchQuery = (query + ' ' + location).toLowerCase();
-      return searchText.includes(searchQuery);
-    });
-
-    // Format the response to match our application's structure
-    return filteredJobs.map(job => {
-      // Extract job highlights
-      const qualifications = [];
-      const benefits = [];
-      const responsibilities = [];
-
-      if (job.job_highlights) {
-        job.job_highlights.forEach(highlight => {
-          if (!highlight || !highlight.items) return;
-          
-          const title = highlight.title?.toLowerCase() || '';
-          if (title.includes('qualifications') || title.includes('requirements')) {
-            qualifications.push(...highlight.items);
-          } else if (title.includes('benefits')) {
-            benefits.push(...highlight.items);
-          } else if (title.includes('responsibilities')) {
-            responsibilities.push(...highlight.items);
-          }
-        });
+    const options = {
+      method: 'POST',
+      url: API_URL,
+      headers: {
+        'x-rapidapi-key': API_KEY,
+        'x-rapidapi-host': 'google-jobs-scraper2.p.rapidapi.com',
+        'Content-Type': 'application/json'
+      },
+      data: {
+        actor: 'scraper.google.jobs',
+        input: {
+          engine: 'google_jobs',
+          q: location ? `${query} ${location}` : query
+        }
       }
+    };
 
-      // Extract job type and salary from extensions
-      const extensions = job.extensions || [];
-      const jobType = extensions.find(ext => 
-        ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary'].includes(ext)
-      ) || 'Full-time';
-      
-      const salary = extensions.find(ext => 
-        ext.includes('$') || ext.includes('K') || ext.includes('k')
-      ) || 'Salary not specified';
-
-      // Ensure all required fields have fallback values
-      const formattedJob = {
-        id: job.job_id || `job_${Math.random().toString(36).substr(2, 9)}`,
-        title: job.title || 'Untitled Position',
-        company: job.company_name || 'Company Not Specified',
-        location: job.location || 'Location Not Specified',
-        description: job.description || 'No description available',
-        url: job.apply_options?.[0]?.link || job.share_link || '#',
-        date: extensions.find(ext => ext.includes('ago')) || new Date().toISOString(),
-        type: jobType,
-        salary: salary,
-        requirements: qualifications,
-        benefits: benefits,
-        responsibilities: responsibilities,
-        matchedSkills: [], // Will be populated in the frontend
-        via: job.via || '',
-        thumbnail: job.thumbnail || null,
-        source: job.via || job.source || '',
-        extensions: extensions,
-        highlights: job.job_highlights || []
-      };
-
-      // Clean up any HTML tags in the description
-      formattedJob.description = formattedJob.description
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/\n+/g, '\n')
-        .trim();
-
-      // Clean up any HTML tags in requirements, benefits, and responsibilities
-      formattedJob.requirements = formattedJob.requirements.map(req => 
-        req.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
-      );
-      formattedJob.benefits = formattedJob.benefits.map(benefit => 
-        benefit.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
-      );
-      formattedJob.responsibilities = formattedJob.responsibilities.map(resp => 
-        resp.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
-      );
-
-      return formattedJob;
-    });
-  } catch (error) {
-    console.error("Error details:", {
-      message: error.message,
-      stack: error.stack
-    });
+    const response = await axios.request(options);
+    console.log('Raw API response:', JSON.stringify(response.data, null, 2));
     
-    throw new Error('Failed to fetch jobs');
+    // Check if we have valid job data
+    if (response.data && response.data[0]?.jobs_results) {
+      console.log('Found jobs:', response.data[0].jobs_results.length);
+      return response.data[0].jobs_results.map(job => {
+        console.log('Processing job:', job.title);
+        idCounter++; // Increment counter for each job
+        return {
+          id: job.job_id || `job_${idCounter}_${Date.now()}`,
+          title: job.title || 'Untitled Position',
+          company: job.company_name || 'Company Not Specified',
+          location: job.location || 'Location Not Specified',
+          description: job.description || 'No description available',
+          url: job.apply_options?.[0]?.link || job.share_link || '#',
+          date: job.extensions?.find(ext => ext.includes('ago')) || new Date().toISOString(),
+          type: job.extensions?.find(ext => 
+            ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary'].includes(ext)
+          ) || 'Full-time',
+          salary: job.extensions?.find(ext => 
+            ext.includes('$') || ext.includes('K') || ext.includes('k')
+          ) || 'Salary not specified',
+          requirements: job.job_highlights?.find(h => 
+            h.title?.toLowerCase().includes('qualifications') || 
+            h.title?.toLowerCase().includes('requirements')
+          )?.items || [],
+          benefits: job.job_highlights?.find(h => 
+            h.title?.toLowerCase().includes('benefits')
+          )?.items || [],
+          responsibilities: job.job_highlights?.find(h => 
+            h.title?.toLowerCase().includes('responsibilities')
+          )?.items || [],
+          matchedSkills: [], // Will be populated in the frontend
+          via: job.via || '',
+          thumbnail: job.thumbnail || null,
+          source: job.via || job.source || '',
+          extensions: job.extensions || [],
+          highlights: job.job_highlights || []
+        };
+      });
+    }
+    
+    // If no jobs found, return mock data for testing
+    console.log('No jobs found in response structure, using mock data');
+    return mockJobs;
+  } catch (error) {
+    console.error('Error fetching jobs:', error);
+    // If there's an error, return mock data for testing
+    console.log('Using mock data due to API error');
+    return mockJobs;
   }
 }; 
