@@ -1,324 +1,392 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db, storage } from '../firebase.config';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
-import { v4 as uuidv4 } from 'uuid';
-import Navbar from '../components/Navbar';
-import { saveUserData } from '../utils/firebaseHelpers';
-
-// Define the proxy server URL
-const PROXY_SERVER_URL = import.meta.env.VITE_PROXY_SERVER_URL || 'http://localhost:3000';
+import { uploadBytesResumable, getDownloadURL, ref } from 'firebase/storage';
+import { updateDoc, doc, getDoc } from 'firebase/firestore';
+import { storage, db, auth } from '../firebase.config';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FiUpload, FiArrowLeft, FiInfo, FiCheckCircle, FiAlertCircle, FiFileText, FiX } from 'react-icons/fi';
 
 const ResumeUpload = () => {
   const [file, setFile] = useState(null);
-  const [fileName, setFileName] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [enhancementResult, setEnhancementResult] = useState(null);
   const [error, setError] = useState('');
-  const [processingStatus, setProcessingStatus] = useState('');
-  const fileInputRef = useRef(null);
+  const [success, setSuccess] = useState(false);
+  const [currentResume, setCurrentResume] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const navigate = useNavigate();
+
+  // Fetch user's current resume on component mount
+  useEffect(() => {
+    const fetchUserResume = async () => {
+      if (auth.currentUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+          if (userDoc.exists() && userDoc.data().resumeUrl) {
+            setCurrentResume({
+              url: userDoc.data().resumeUrl,
+              name: userDoc.data().resumeFileName || 'Your current resume',
+              updatedAt: userDoc.data().resumeUpdatedAt?.toDate() || new Date()
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching resume:', error);
+        }
+      }
+    };
+    
+    fetchUserResume();
+  }, []);
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    validateAndSetFile(selectedFile);
+  };
+
+  const validateAndSetFile = (selectedFile) => {
+    if (selectedFile) {
+      // Check file type (PDF or DOC/DOCX)
+      const fileType = selectedFile.type;
+      const validTypes = [
+        'application/pdf', 
+        'application/msword', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      
+      if (!validTypes.includes(fileType)) {
+        setError('Please upload a PDF or Word document');
+        return false;
+      }
+      
+      // Check file size (max 5MB)
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        setError('File size exceeds 5MB limit');
+        return false;
+      }
+      
+      setFile(selectedFile);
+      setError('');
+      return true;
+    }
+    return false;
+  };
 
   const handleDragOver = (e) => {
     e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const selectedFile = e.dataTransfer.files[0];
-      validateAndSetFile(selectedFile);
-    }
-  };
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      validateAndSetFile(selectedFile);
-    }
-  };
-
-  const validateAndSetFile = (selectedFile) => {
-    // Check if file is PDF
-    if (selectedFile.type !== 'application/pdf') {
-      setError('Please upload a PDF file');
-      return;
-    }
-
-    // Check file size (max 5MB)
-    if (selectedFile.size > 5 * 1024 * 1024) {
-      setError('File size should be less than 5MB');
-      return;
-    }
-
-    setFile(selectedFile);
-    setFileName(selectedFile.name);
-    setError('');
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files[0];
+    validateAndSetFile(droppedFile);
   };
 
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a file first');
+      setError('Please select a file to upload');
       return;
     }
-
+    
     if (!auth.currentUser) {
-      setError('Please log in to upload a resume');
+      setError('You must be logged in to upload a resume');
       return;
     }
-
-    setIsUploading(true);
-    setUploadProgress(0);
+    
+    setUploading(true);
     setError('');
+    setSuccess(false);
     
     try {
-      const userId = auth.currentUser.uid;
+      const user = auth.currentUser;
+      const timestamp = new Date().getTime();
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `resume_${timestamp}.${fileExtension}`;
+      const storageRef = ref(storage, `resumes/${user.uid}/${fileName}`);
       
-      // Create form data for the file upload
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('uid', userId);
+      const uploadTask = uploadBytesResumable(storageRef, file);
       
-      // Upload file and get analysis in one step using the proxy server
-      setProcessingStatus('Uploading and analyzing your resume...');
-      setUploadProgress(30);
-      
-      const response = await fetch(`${PROXY_SERVER_URL}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload and analyze resume');
-      }
-      
-      setUploadProgress(70);
-      
-      const resultData = await response.json();
-      const { url: downloadURL, analysis } = resultData;
-      
-      // Save file reference in Firestore
-      await saveUserData(userId, {
-        resumeURL: downloadURL,
-        resumeFileName: fileName,
-        resumeUploadDate: new Date(),
-        resumeAnalyzed: true,
-      });
-      
-      setUploadProgress(100);
-      setIsUploading(false);
-      
-      // Set the analysis result
-      setEnhancementResult(analysis);
-      
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          setUploadProgress(progress);
+        },
+        (error) => {
+          console.error('Upload error:', error);
+          setError('Failed to upload resume. Please try again.');
+          setUploading(false);
+        },
+        async () => {
+          // Get download URL
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          
+          // Update user document with resume URL
+          try {
+            await updateDoc(doc(db, 'users', user.uid), {
+              resumeUrl: downloadURL,
+              resumeFileName: file.name,
+              resumeUpdatedAt: new Date()
+            });
+            
+            setSuccess(true);
+            // Update current resume data
+            setCurrentResume({
+              url: downloadURL,
+              name: file.name,
+              updatedAt: new Date()
+            });
+            
+            setTimeout(() => {
+              navigate('/dashboard');
+            }, 2000);
+          } catch (error) {
+            console.error('Firestore update error:', error);
+            setError('Your resume was uploaded but we could not save it to your profile.');
+          }
+          
+          setUploading(false);
+        }
+      );
     } catch (error) {
-      console.error("Error uploading and analyzing file:", error);
-      setError('Failed to process your resume. Please try again.');
-      setIsUploading(false);
-      setProcessingStatus('');
+      console.error('Resume upload error:', error);
+      setError('An unexpected error occurred. Please try again.');
+      setUploading(false);
     }
   };
 
-  const cancelProcessing = () => {
-    setIsProcessing(false);
-    setProcessingStatus('');
-    setError('Processing canceled by user');
+  const clearFile = () => {
+    setFile(null);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black relative overflow-hidden">
-      {/* Background blur effect with colorful lights */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-20 w-64 h-64 bg-purple-600 rounded-full mix-blend-screen filter blur-xl opacity-30 animate-pulse"></div>
-        <div className="absolute top-40 right-40 w-72 h-72 bg-blue-600 rounded-full mix-blend-screen filter blur-xl opacity-30 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-pink-600 rounded-full mix-blend-screen filter blur-xl opacity-30 animate-pulse" style={{animationDelay: '2s'}}></div>
-        <div className="absolute -bottom-10 right-20 w-72 h-72 bg-green-600 rounded-full mix-blend-screen filter blur-xl opacity-30 animate-pulse" style={{animationDelay: '3s'}}></div>
-      </div>
-      
-      {/* Overlay with backdrop filter for better text readability */}
-      <div className="absolute inset-0 backdrop-blur-sm bg-black/30"></div>
-      
-      {/* Content */}
-      <div className="relative z-10">
-        <Navbar />
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="min-h-screen bg-gray-900 text-white"
+    >
+      <div className="max-w-4xl mx-auto py-12 px-4">
+        <motion.h1 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="text-3xl font-bold mb-2 text-center bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent"
+        >
+          Upload Your Resume
+        </motion.h1>
         
-        <div className="container mx-auto px-4 py-12">
-          <div className="max-w-4xl mx-auto bg-white/10 backdrop-blur-md rounded-xl shadow-2xl overflow-hidden">
-            <div className="p-8">
-              <h1 className="text-3xl font-bold text-white mb-6">Enhance Your Resume with AI</h1>
-              <p className="text-gray-200 mb-8">Upload your resume and let our AI analyze and improve it to increase your chances of landing your dream job.</p>
+        <motion.p
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="text-gray-400 text-center mb-8"
+        >
+          Let employers find you with a professional resume
+        </motion.p>
+        
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="bg-gray-800 rounded-xl shadow-xl p-8 mb-8 border border-gray-700 relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 to-blue-500 opacity-70"></div>
+          
+          <div className="flex flex-col md:flex-row items-start gap-8">
+            <div className="w-full md:w-3/5">
+              <motion.div className="mb-2 flex items-center">
+                <FiInfo className="text-blue-400 mr-2" />
+                <h2 className="text-lg font-semibold text-gray-200">Resume Guidelines</h2>
+              </motion.div>
               
-              {/* Upload area */}
+              <ul className="text-gray-300 mb-6 space-y-2 text-sm">
+                <li className="flex items-start">
+                  <span className="text-green-400 mr-2">✓</span>
+                  Keep your resume up-to-date with your latest experience and skills
+                </li>
+                <li className="flex items-start">
+                  <span className="text-green-400 mr-2">✓</span>
+                  Include relevant keywords for your industry to improve job matches
+                </li>
+                <li className="flex items-start">
+                  <span className="text-green-400 mr-2">✓</span>
+                  PDF format is preferred for consistent formatting across devices
+                </li>
+                <li className="flex items-start">
+                  <span className="text-green-400 mr-2">✓</span>
+                  Maximum file size: 5MB
+                </li>
+              </ul>
+              
+              {currentResume && (
+                <div className="mb-6 bg-gray-700/50 p-4 rounded-lg border border-gray-600">
+                  <div className="flex items-center mb-2">
+                    <FiFileText className="text-blue-400 mr-2" />
+                    <h3 className="font-medium text-gray-200">Current Resume</h3>
+                  </div>
+                  <p className="text-sm text-gray-300 truncate mb-1">{currentResume.name}</p>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Last updated: {currentResume.updatedAt.toLocaleDateString()}
+                  </p>
+                  <a 
+                    href={currentResume.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors inline-flex items-center"
+                  >
+                    View current resume
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+              )}
+            </div>
+            
+            <div className="w-full md:w-2/5">
               <div 
-                className={`border-2 border-dashed rounded-lg p-8 mb-6 text-center transition-all ${file ? 'border-green-400 bg-green-400/10' : 'border-gray-400 hover:border-blue-400 bg-white/5'}`}
+                className={`mb-6 border-2 border-dashed rounded-lg p-8 text-center transition-all relative overflow-hidden
+                  ${isDragging ? 'border-purple-500 bg-purple-900/20' : 'border-gray-600 hover:border-purple-500/70'}
+                  ${file ? 'bg-gray-700/30' : ''}
+                `}
                 onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
-                {!file ? (
-                  <div>
-                    <svg className="mx-auto h-12 w-12 text-gray-300" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h12v12"></path>
-                    </svg>
-                    <p className="mt-4 text-gray-200">Drag and drop your resume here, or</p>
-                    <button 
-                      onClick={() => fileInputRef.current.click()}
-                      className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white font-medium transition-colors"
-                    >
-                      Browse files
-                    </button>
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      accept=".pdf"
-                    />
-                    <p className="mt-2 text-sm text-gray-400">PDF files only, max 5MB</p>
-                  </div>
-                ) : (
-                  <div>
-                    <svg className="mx-auto h-12 w-12 text-green-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="mt-4 text-green-200 font-medium">{fileName}</p>
-                    <button 
-                      onClick={() => {
-                        setFile(null);
-                        setFileName('');
-                      }}
-                      className="mt-2 text-sm text-red-300 hover:text-red-400"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              {error && (
-                <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-md">
-                  <p className="text-red-200">{error}</p>
-                </div>
-              )}
-              
-              {isUploading && (
-                <div className="mb-6">
-                  <p className="text-gray-200 mb-2">{processingStatus} {uploadProgress}%</p>
-                  <div className="w-full bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all" 
-                      style={{ width: `${uploadProgress}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-gray-400 text-sm mt-2">This may take up to a minute. Please don't close this page.</p>
-                </div>
-              )}
-              
-              <div className="flex justify-center">
-                <button 
-                  onClick={handleUpload}
-                  disabled={!file || isUploading}
-                  className={`px-6 py-3 rounded-md text-white font-medium text-lg transition-colors ${(!file || isUploading) ? 'bg-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600'}`}
+                <input 
+                  type="file" 
+                  id="resume-upload" 
+                  className="hidden" 
+                  onChange={handleFileChange}
+                  accept=".pdf,.doc,.docx"
+                />
+                <label 
+                  htmlFor="resume-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center"
                 >
-                  {isUploading ? 'Processing...' : 'Enhance My Resume'}
-                </button>
-              </div>
-              
-              {/* Results section */}
-              {enhancementResult && (
-                <div className="mt-12 bg-white/10 rounded-lg p-6">
-                  <h2 className="text-2xl font-bold text-white mb-4">AI Enhancement Results</h2>
-                  <div className="prose prose-invert max-w-none">
-                    <div className="bg-white/5 rounded-md p-6 text-gray-200">
-                      {enhancementResult.split('\n').map((line, index) => (
-                        <p key={index}>{line}</p>
-                      ))}
+                  {file ? (
+                    <div className="relative">
+                      <div className="bg-purple-500/20 p-4 rounded-full mb-4 inline-block">
+                        <FiFileText className="h-10 w-10 text-purple-400" />
+                      </div>
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          clearFile();
+                        }}
+                        className="absolute top-0 right-0 bg-red-500/80 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                      >
+                        <FiX className="h-4 w-4" />
+                      </button>
+                      <div>
+                        <p className="text-purple-400 font-medium text-sm truncate max-w-[200px] mx-auto">
+                          {file.name}
+                        </p>
+                        <p className="text-gray-400 text-xs mt-1">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-6 flex flex-wrap gap-4 justify-between">
-                    <button
-                      onClick={() => {
-                        // Copy to clipboard
-                        navigator.clipboard.writeText(enhancementResult);
-                      }}
-                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-white font-medium transition-colors"
-                    >
-                      Copy to Clipboard
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Download as text file
-                        const element = document.createElement("a");
-                        const file = new Blob([enhancementResult], {type: 'text/plain'});
-                        element.href = URL.createObjectURL(file);
-                        element.download = "enhanced_resume_feedback.txt";
-                        document.body.appendChild(element);
-                        element.click();
-                      }}
-                      className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 rounded-md text-white font-medium transition-colors"
-                    >
-                      Download Feedback
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Reset the enhancement process
-                        setEnhancementResult(null);
-                        setFile(null);
-                        setFileName('');
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white font-medium transition-colors"
-                    >
-                      Start Over
-                    </button>
-                  </div>
-                </div>
-              )}
-              
-              {/* Features section */}
-              {!enhancementResult && !isUploading && (
-                <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white/5 p-6 rounded-lg">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">GPT-4 Analysis</h3>
-                    <p className="text-gray-300">Our advanced AI analyzes your resume against top industry standards and provides detailed, personalized feedback.</p>
-                  </div>
-                  
-                  <div className="bg-white/5 p-6 rounded-lg">
-                    <div className="w-12 h-12 bg-gradient-to-r from-pink-600 to-red-600 rounded-full flex items-center justify-center mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100-4m0 4v2m0-6V4"></path>
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Instant Improvements</h3>
-                    <p className="text-gray-300">Get specific rewrites for weak sections and actionable suggestions to make your resume stand out.</p>
-                  </div>
-                  
-                  <div className="bg-white/5 p-6 rounded-lg">
-                    <div className="w-12 h-12 bg-gradient-to-r from-green-600 to-teal-600 rounded-full flex items-center justify-center mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">ATS Optimization</h3>
-                    <p className="text-gray-300">Ensure your resume passes through Applicant Tracking Systems with proper keyword optimization and formatting advice.</p>
-                  </div>
-                </div>
-              )}
-              
-              <div className="mt-8 text-sm text-gray-400 text-center">
-                <p>Your resume is processed securely using OpenAI's GPT-4. We don't store the content of your resume permanently.</p>
+                  ) : (
+                    <>
+                      <div className="bg-gray-700/70 p-4 rounded-full mb-4 inline-block">
+                        <FiUpload className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="text-gray-300 font-medium">Drop file here or click to browse</p>
+                        <p className="text-gray-500 text-xs mt-1">PDF or Word document (max 5MB)</p>
+                      </div>
+                    </>
+                  )}
+                </label>
               </div>
             </div>
           </div>
-        </div>
+
+          <AnimatePresence>
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-red-900/30 border border-red-500/50 text-red-400 p-4 rounded-lg mb-6 flex items-start"
+              >
+                <FiAlertCircle className="mt-0.5 mr-2 flex-shrink-0" />
+                <p>{error}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          <AnimatePresence>
+            {success && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-green-900/30 border border-green-500/50 text-green-400 p-4 rounded-lg mb-6 flex items-start"
+              >
+                <FiCheckCircle className="mt-0.5 mr-2 flex-shrink-0" />
+                <p>Resume uploaded successfully! Redirecting to dashboard...</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          {uploading && (
+            <div className="mb-6">
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                <span>Uploading resume</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${uploadProgress}%` }}
+                  className="bg-gradient-to-r from-purple-600 to-blue-500 h-2 rounded-full"
+                ></motion.div>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex gap-4 mt-6">
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex-1 flex items-center justify-center"
+            >
+              <FiArrowLeft className="mr-2" />
+              Cancel
+            </button>
+            
+            <motion.button
+              onClick={handleUpload}
+              disabled={!file || uploading}
+              whileHover={{ scale: file && !uploading ? 1.02 : 1 }}
+              whileTap={{ scale: file && !uploading ? 0.98 : 1 }}
+              className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-500 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-1 flex items-center justify-center shadow-md"
+            >
+              {uploading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <FiUpload className="mr-2" />
+                  Upload Resume
+                </>
+              )}
+            </motion.button>
+          </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

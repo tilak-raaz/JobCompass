@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { auth, db, storage } from "../firebase.config";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -7,6 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion } from "framer-motion";
 
 const Dashboard = () => {
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +49,14 @@ const Dashboard = () => {
     // Other Technical Skills
     "Machine Learning", "Data Analysis", "UI/UX Design", "Agile", "Scrum"
   ];
+
+  useEffect(() => {
+    // Check if we should enable editing mode from navigation state
+    if (location.state?.isEditing) {
+      setIsEditing(true);
+      setActiveTab("profile"); // Switch to profile tab for editing
+    }
+  }, [location.state]);
 
   useEffect(() => {
     // Set up auth state observer
@@ -223,6 +232,9 @@ const Dashboard = () => {
         type: "success"
       });
       
+      // Redirect to dashboard without editing mode
+      navigate("/dashboard", { replace: true });
+      
       // Refresh user data
       await fetchUserData(user.uid);
     } catch (error) {
@@ -250,620 +262,367 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#242424]">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-t-purple-500 border-b-blue-500 border-l-transparent border-r-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#242424] text-white">
-      {notification.show && (
-        <motion.div
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-md shadow-lg ${
-            notification.type === "success" ? "bg-green-500" : "bg-red-500"
-          }`}
-        >
-          {notification.message}
-        </motion.div>
-      )}
-      
-      <header className="bg-gray-900 p-4 shadow-md">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <Link to="/" className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent">
-            Job Compass
-          </Link>
-          
-          <nav className="flex space-x-4">
-            <Link
-              to="/job-search"
-              className="text-gray-300 hover:text-white transition-colors"
-            >
-              Search
-            </Link>
-            <button
-              onClick={() => {
-                setIsEditing(true);
-                setActiveTab("profile");
-                window.scrollTo(0, 0);
-              }}
-              className="text-gray-300 hover:text-white transition-colors"
-            >
-              Update Profile
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="text-gray-300 hover:text-white transition-colors"
-            >
-              Sign Out
-            </button>
-          </nav>
-        </div>
-      </header>
-      
-      <div className="max-w-6xl mx-auto p-4 sm:p-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
+    <div className="min-h-screen bg-gray-900 text-white">
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="mt-8 mb-12">
           <h1 className="text-3xl font-bold">Dashboard</h1>
-        </div>
-
-        <nav className="border-b border-gray-700 mb-6">
-          <ul className="flex gap-6">
-            <li>
+          
+          {/* Tabs */}
+          <nav className="border-b border-gray-700 mb-6">
+            <div className="flex space-x-8">
               <button
-                onClick={() => setActiveTab("profile")}
-                className={`pb-2 ${
-                  activeTab === "profile"
-                    ? "text-purple-500 border-b-2 border-purple-500"
-                    : "text-gray-400 hover:text-white"
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'profile'
+                    ? 'border-purple-500 text-purple-500'
+                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
                 }`}
+                onClick={() => setActiveTab('profile')}
               >
                 Profile
               </button>
-            </li>
-            <li>
               <button
-                onClick={() => setActiveTab("resume")}
-                className={`pb-2 ${
-                  activeTab === "resume"
-                    ? "text-purple-500 border-b-2 border-purple-500"
-                    : "text-gray-400 hover:text-white"
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'resume'
+                    ? 'border-purple-500 text-purple-500'
+                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
                 }`}
+                onClick={() => setActiveTab('resume')}
               >
                 Resume
               </button>
-            </li>
-            <li>
               <button
-                onClick={() => setActiveTab("personal-branding")}
-                className={`pb-2 ${
-                  activeTab === "personal-branding"
-                    ? "text-purple-500 border-b-2 border-purple-500"
-                    : "text-gray-400 hover:text-white"
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'personal-branding'
+                    ? 'border-purple-500 text-purple-500'
+                    : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
                 }`}
+                onClick={() => setActiveTab('personal-branding')}
               >
                 Personal Branding
               </button>
-            </li>
-          </ul>
-        </nav>
-
-        {/* Content Area */}
-        <div className="bg-gray-800 rounded-lg p-6 shadow-lg relative overflow-hidden
-          before:w-24 before:h-24 before:absolute before:bg-purple-600 before:rounded-full before:-z-10 before:blur-2xl before:opacity-20
-          after:w-32 after:h-32 after:absolute after:bg-sky-400 after:rounded-full after:-z-10 after:blur-xl after:top-64 after:-right-12 after:opacity-20">
+            </div>
+          </nav>
           
-          {activeTab === "profile" && userData && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-6"
-            >
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-                <div className="w-24 h-24 rounded-full overflow-hidden">
-                  <img 
-                    src={userData.profilePicture || "https://via.placeholder.com/100"} 
-                    alt="Profile"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={userData.fullName}
-                      onChange={(e) => setUserData({ ...userData, fullName: e.target.value })}
-                      className="bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white text-2xl font-bold w-full mb-2"
-                    />
-                  ) : (
-                    <h2 className="text-2xl font-bold">{userData.fullName}</h2>
-                  )}
-                  <p className="text-gray-300">{userData.email}</p>
-                </div>
-              </div>
-              
-              <div className="mt-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3 text-purple-300 flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M9 3a1 1 0 012 0v5.5a.5.5 0 001 0V4a1 1 0 112 0v4.5a.5.5 0 001 0V6a1 1 0 112 0v5a7 7 0 11-14 0V9a1 1 0 012 0v2.5a.5.5 0 001 0V4a1 1 0 112 0v4.5a.5.5 0 001 0V3z" />
-                    </svg>
-                    Skills
-                  </h3>
-                  {isEditing ? (
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap gap-2">
-                        {userData.skills && userData.skills.map((skill, index) => (
-                          <motion.div 
-                            key={index}
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="bg-gradient-to-r from-purple-500/20 to-blue-500/20 backdrop-blur-sm px-3 py-1 rounded-full text-sm flex items-center gap-2 border border-purple-500/30 shadow-sm"
-                          >
-                            {skill}
-                            <button
-                              onClick={() => {
-                                const newSkills = userData.skills.filter((_, i) => i !== index);
-                                setUserData({ ...userData, skills: newSkills });
-                              }}
-                              className="text-red-400 hover:text-red-300 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/50 rounded-full"
+          {/* Tab content */}
+          <div className="mt-8">
+            {activeTab === 'profile' && (
+              <div>
+                {/* Profile info section */}
+                <section className="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+                  <div className="flex flex-col md:flex-row items-start gap-6">
+                    <div className="w-24 h-24 bg-purple-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
+                      {userData?.fullName?.charAt(0) || user?.email?.charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-bold text-white mb-2">{userData?.fullName || "Complete your profile"}</h2>
+                      <p className="text-gray-400 mb-4">{user?.email}</p>
+                      
+                      {/* Skills section */}
+                      <div className="mt-4">
+                        <h3 className="text-lg font-medium text-white mb-2">Skills</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {userData?.skills?.map((skill) => (
+                            <span 
+                              key={skill}
+                              className="bg-purple-900/50 text-purple-300 px-3 py-1 rounded-full text-sm"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                            </button>
-                          </motion.div>
-                        ))}
-                      </div>
-                      <div className="space-y-4">
-                        <div className="relative group">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-                          <input
-                            type="text"
-                            placeholder="Type a skill and press Enter"
-                            className="w-full bg-gray-700/50 border border-gray-600 focus:border-purple-500/50 rounded-lg py-2 pl-10 pr-3 text-white placeholder-gray-400 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500/30 backdrop-blur-sm"
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter' && e.target.value.trim()) {
-                                const newSkill = e.target.value.trim();
-                                if (!userData.skills?.includes(newSkill)) {
-                                  const newSkills = [...(userData.skills || []), newSkill];
-                                  setUserData({ ...userData, skills: newSkills });
-                                  e.target.value = '';
-                                }
-                              }
-                            }}
-                          />
-                          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                            <span className="text-xs text-gray-400">Press Enter ↵</span>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm text-gray-300 mb-3 flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-                            </svg>
-                            Suggested Skills
-                          </label>
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                            {skillOptions
-                              .filter(skill => !userData.skills?.includes(skill))
-                              .map((skill, index) => (
-                                <motion.button
-                                  key={index}
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: index * 0.05 }}
-                                  onClick={() => {
-                                    const newSkills = [...(userData.skills || []), skill];
-                                    setUserData({ ...userData, skills: newSkills });
-                                  }}
-                                  className="bg-gray-700/50 hover:bg-gray-600/50 px-3 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-all flex items-center gap-2 group border border-gray-600/50 hover:border-purple-500/50 backdrop-blur-sm"
-                                >
-                                  <span className="text-purple-400 group-hover:text-purple-300">+</span>
-                                  {skill}
-                                </motion.button>
-                              ))
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex flex-wrap gap-2"
-                    >
-                      {userData.skills && userData.skills.map((skill, index) => (
-                        <motion.span 
-                          key={index}
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ delay: index * 0.05 }}
-                          className="bg-gradient-to-r from-purple-500/20 to-blue-500/20 backdrop-blur-sm px-3 py-1 rounded-full text-sm border border-purple-500/30 shadow-sm"
-                        >
-                          {skill}
-                        </motion.span>
-                      ))}
-                    </motion.div>
-                  )}
-                </div>
-              </div>
-              
-              {isEditing && (
-                <div className="flex justify-end mt-6">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveProfile}
-                      disabled={saving}
-                      className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-all disabled:opacity-50"
-                    >
-                      {saving ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-          
-          {/* Resume Tab */}
-          {activeTab === "resume" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-6"
-            >
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold">Resume</h2>
-                {!isEditing ? (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-all"
-                  >
-                    Edit
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveProfile}
-                      disabled={saving}
-                      className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-all disabled:opacity-50"
-                    >
-                      {saving ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="space-y-6">
-                <div className="p-4 border border-dashed border-gray-600 rounded-lg">
-                  {resumeUrl ? (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <span className="text-lg">Resume uploaded</span>
-                        </div>
-                        {isEditing && (
-                          <p className="text-sm text-gray-400 mt-2">Upload a new file to replace your current resume</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <a
-                          href={resumeUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-sm transition-all"
-                        >
-                          View
-                        </a>
-                        {isEditing && (
-                          <input
-                            type="file"
-                            onChange={handleResumeChange}
-                            className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:bg-purple-500 file:text-white hover:file:bg-purple-600 text-gray-300 text-sm rounded-md"
-                            accept=".pdf,.docx"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  ) : isEditing ? (
-                    <div className="text-center p-6">
-                      <div className="mb-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                      </div>
-                      <p className="mb-3 text-gray-300">Drag and drop your resume or click to browse</p>
-                      <input
-                        type="file"
-                        onChange={handleResumeChange}
-                        className="mx-auto file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:bg-purple-500 file:text-white hover:file:bg-purple-600 text-gray-300 text-sm rounded-md"
-                        accept=".pdf,.docx"
-                      />
-                      <p className="mt-2 text-xs text-gray-400">Supported formats: PDF, DOCX</p>
-                    </div>
-                  ) : (
-                    <div className="text-center p-6">
-                      <div className="mb-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <p className="text-gray-300">No resume uploaded yet</p>
-                      <p className="mt-2 text-sm text-gray-400">Click edit to upload your resume</p>
-                    </div>
-                  )}
-                </div>
-                
-                {resumeAnalysis && (
-                  <div className="mt-6">
-                    <h3 className="text-lg font-semibold mb-3 text-purple-300">AI Resume Analysis</h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-gray-700 bg-opacity-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-green-300 mb-2">Strengths</h4>
-                        <ul className="space-y-2">
-                          {resumeAnalysis.strengths.map((strength, index) => (
-                            <li key={index} className="flex items-start">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-400 mr-2 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                              </svg>
-                              {strength}
-                            </li>
+                              {skill}
+                            </span>
                           ))}
-                        </ul>
+                          {(!userData?.skills || userData.skills.length === 0) && (
+                            <p className="text-gray-500 text-sm">No skills added yet.</p>
+                          )}
+                        </div>
                       </div>
                       
-                      <div className="bg-gray-700 bg-opacity-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-yellow-300 mb-2">Suggestions for Improvement</h4>
-                        <ul className="space-y-2">
-                          {resumeAnalysis.suggestions.map((suggestion, index) => (
-                            <li key={index} className="flex items-start">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-400 mr-2 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z" clipRule="evenodd" />
-                              </svg>
-                              {suggestion}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-          
-          {/* Personal Branding Tab - Completing this section */}
-          {activeTab === "personal-branding" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="space-y-6"
-            >
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold">Personal Branding</h2>
-                {!isEditing ? (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-all"
-                  >
-                    Edit
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveProfile}
-                      disabled={saving}
-                      className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-all disabled:opacity-50"
-                    >
-                      {saving ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3 text-purple-300">LinkedIn Profile</h3>
-                  {isEditing ? (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 015.656 0l4 4a4 4 0 01-5.656 5.656l-1.102-1.101" />
-                        </svg>
-                      </div>
-                      <input
-                        type="text"
-                        value={links.linkedin}
-                        onChange={(e) => setLinks({...links, linkedin: e.target.value})}
-                        className="w-full bg-gray-700 border border-gray-600 rounded-md py-2 pl-10 pr-3 text-white"
-                        placeholder="https://linkedin.com/in/yourusername"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      {links.linkedin ? (
-                        <div className="flex items-center gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
-                          </svg>
-                          <a 
-                            href={links.linkedin} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:underline"
-                          >
-                            {links.linkedin}
-                          </a>
-                        </div>
-                      ) : (
-                        <p className="text-gray-400">No LinkedIn profile added</p>
+                      {isEditing && (
+                        <button
+                          onClick={saveProfile}
+                          disabled={saving}
+                          className="mt-4 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-500 rounded-lg text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {saving ? 'Saving...' : 'Save Profile'}
+                        </button>
                       )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                </section>
                 
-                <div>
-                  <h3 className="text-lg font-semibold mb-3 text-purple-300">Portfolio / Website</h3>
-                  {isEditing ? (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                        </svg>
-                      </div>
-                      <input
-                        type="text"
-                        value={links.portfolio}
-                        onChange={(e) => setLinks({...links, portfolio: e.target.value})}
-                        className="w-full bg-gray-700 border border-gray-600 rounded-md py-2 pl-10 pr-3 text-white"
-                        placeholder="https://yourportfolio.com"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      {links.portfolio ? (
-                        <div className="flex items-center gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-2-3a1 1 0 112 0v-2h2a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                          </svg>
-                          <a 
-                            href={links.portfolio} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-green-400 hover:underline"
+                {/* Add a section for editing skills when in editing mode */}
+                {isEditing && (
+                  <section className="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+                    <h3 className="text-xl font-bold mb-4">Edit Skills</h3>
+                    
+                    {/* Display current skills with delete option */}
+                    <div className="mb-4">
+                      <p className="text-gray-400 mb-2">Current Skills:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {userData?.skills?.map((skill, index) => (
+                          <div 
+                            key={index}
+                            className="bg-purple-900/50 text-purple-300 px-3 py-1 rounded-full text-sm flex items-center"
                           >
-                            {links.portfolio}
-                          </a>
-                        </div>
-                      ) : (
-                        <p className="text-gray-400">No portfolio website added</p>
-                      )}
+                            {skill}
+                            <button 
+                              className="ml-2 text-red-400 hover:text-red-300 focus:outline-none"
+                              onClick={() => {
+                                const newSkills = [...userData.skills];
+                                newSkills.splice(index, 1);
+                                setUserData({...userData, skills: newSkills});
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
-                
-                <div className="bg-gray-700 bg-opacity-40 p-4 rounded-lg mt-6">
-                  <div className="flex items-start gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-300 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <h4 className="font-medium text-white mb-1">Why add your profiles?</h4>
-                      <p className="text-gray-300 text-sm">
-                        Adding your LinkedIn and portfolio links helps employers and recruiters find your full professional profile. 
-                        It increases your visibility in search results and makes it easier for potential connections to reach out.
-                      </p>
+                    
+                    {/* Add new skills */}
+                    <div className="mt-4">
+                      <p className="text-gray-400 mb-2">Add Skills:</p>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {skillOptions
+                          .filter(skill => !userData?.skills?.includes(skill))
+                          .map((skill, index) => (
+                            <button
+                              key={index}
+                              className="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-center"
+                              onClick={() => {
+                                const newSkills = [...(userData?.skills || []), skill];
+                                setUserData({...userData, skills: newSkills});
+                              }}
+                            >
+                              <span className="mr-1">+</span> {skill}
+                            </button>
+                          ))
+                        }
+                      </div>
                     </div>
-                  </div>
-                </div>
+                    
+                    {/* Custom skill input */}
+                    <div className="mt-6">
+                      <p className="text-gray-400 mb-2">Add Custom Skill:</p>
+                      <div className="flex">
+                        <input
+                          type="text"
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-l-lg px-4 py-2 text-white focus:border-purple-500 focus:outline-none"
+                          placeholder="Enter a custom skill"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && e.target.value.trim()) {
+                              const newSkill = e.target.value.trim();
+                              if (!userData?.skills?.includes(newSkill)) {
+                                const newSkills = [...(userData?.skills || []), newSkill];
+                                setUserData({...userData, skills: newSkills});
+                                e.target.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <button
+                          className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-r-lg transition-colors"
+                          onClick={(e) => {
+                            const input = e.target.previousSibling;
+                            if (input.value.trim()) {
+                              const newSkill = input.value.trim();
+                              if (!userData?.skills?.includes(newSkill)) {
+                                const newSkills = [...(userData?.skills || []), newSkill];
+                                setUserData({...userData, skills: newSkills});
+                                input.value = '';
+                              }
+                            }
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
               </div>
-              
-              {/* Personal brand development tips */}
-              <div className="mt-8">
-                <h3 className="text-lg font-semibold mb-3 text-purple-300">Personal Brand Development Tips</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-gray-700 bg-opacity-30 p-4 rounded-lg">
-                    <h4 className="font-medium text-blue-300 mb-2 flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-                      </svg>
-                      LinkedIn Optimization
-                    </h4>
-                    <ul className="space-y-2 text-sm text-gray-300">
-                      <li className="flex items-start gap-2">
-                        <span className="text-blue-400">•</span>
-                        Use a professional profile photo and cover image
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-blue-400">•</span>
-                        Craft a compelling headline that includes keywords
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-blue-400">•</span>
-                        Write an engaging summary that showcases your unique value
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-blue-400">•</span>
-                        Request recommendations from colleagues and managers
-                      </li>
-                    </ul>
-                  </div>
+            )}
+            
+            {activeTab === 'resume' && (
+              <div>
+                {/* Resume content */}
+                <section className="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+                  <h2 className="text-xl font-bold mb-4">Your Resume</h2>
                   
-                  <div className="bg-gray-700 bg-opacity-30 p-4 rounded-lg">
-                    <h4 className="font-medium text-green-300 mb-2 flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                      </svg>
-                      Portfolio Best Practices
-                    </h4>
-                    <ul className="space-y-2 text-sm text-gray-300">
-                      <li className="flex items-start gap-2">
-                        <span className="text-green-400">•</span>
-                        Showcase your best and most relevant work
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-green-400">•</span>
-                        Include case studies with problems and solutions
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-green-400">•</span>
-                        Keep design clean, simple, and easy to navigate
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-green-400">•</span>
-                        Ensure it's mobile-responsive and loads quickly
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-                
-                <div className="mt-4 bg-purple-900 bg-opacity-20 p-4 rounded-lg border border-purple-700 border-opacity-30">
-                  <h4 className="font-medium text-purple-300 mb-2">Pro Tip: Consistency is Key</h4>
-                  <p className="text-sm text-gray-300">
-                    Maintain a consistent personal brand across all platforms. Use the same profile photo,
-                    similar descriptions, and keep your information up-to-date everywhere. This helps build
-                    recognition and trust with potential employers and connections.
-                  </p>
-                </div>
+                  {resumeUrl ? (
+                    <div>
+                      <div className="flex items-center justify-between p-4 bg-gray-700 rounded-lg mb-4">
+                        <div className="flex items-center">
+                          <div className="bg-purple-500 p-2 rounded mr-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <span className="text-gray-200">Your uploaded resume</span>
+                        </div>
+                        <div>
+                          <a 
+                            href={resumeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 mr-4"
+                          >
+                            View
+                          </a>
+                        </div>
+                      </div>
+                      
+                      {resumeAnalysis && (
+                        <div className="mt-6">
+                          <h3 className="text-lg font-medium mb-3">Resume Analysis</h3>
+                          
+                          <div className="mb-4">
+                            <h4 className="text-green-400 font-medium mb-2">Strengths</h4>
+                            <ul className="list-disc list-inside text-gray-300 space-y-1">
+                              {resumeAnalysis.strengths.map((strength, index) => (
+                                <li key={index}>{strength}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          
+                          <div>
+                            <h4 className="text-yellow-400 font-medium mb-2">Suggestions for Improvement</h4>
+                            <ul className="list-disc list-inside text-gray-300 space-y-1">
+                              {resumeAnalysis.suggestions.map((suggestion, index) => (
+                                <li key={index}>{suggestion}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-400 mb-4">You haven't uploaded a resume yet.</p>
+                      <button
+                        onClick={() => navigate('/resume')}
+                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-500 rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+                      >
+                        Upload Resume
+                      </button>
+                    </div>
+                  )}
+                </section>
               </div>
-            </motion.div>
-          )}
+            )}
+            
+            {activeTab === 'personal-branding' && (
+              <div>
+                {/* Personal branding content */}
+                <section className="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+                  <h2 className="text-xl font-bold mb-4">Personal Branding</h2>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-medium mb-3">Professional Links</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-gray-400 mb-1">LinkedIn Profile</label>
+                          <input
+                            type="text"
+                            value={links.linkedin}
+                            onChange={(e) => setLinks({...links, linkedin: e.target.value})}
+                            disabled={!isEditing}
+                            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-gray-400 mb-1">Portfolio Website</label>
+                          <input
+                            type="text"
+                            value={links.portfolio}
+                            onChange={(e) => setLinks({...links, portfolio: e.target.value})}
+                            disabled={!isEditing}
+                            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-medium mb-3">Career Interests</h3>
+                      
+                      <div className="mb-4">
+                        <label className="block text-gray-400 mb-2">Job Types</label>
+                        <div className="flex flex-wrap gap-2">
+                          {jobTypeOptions.map((jobType) => (
+                            <button
+                              key={jobType}
+                              onClick={() => isEditing && handleJobTypeToggle(jobType)}
+                              disabled={!isEditing}
+                              className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                                careerInterests.jobTypes.includes(jobType)
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:hover:bg-gray-700 disabled:opacity-50'
+                              }`}
+                            >
+                              {jobType}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="mb-4">
+                        <label className="block text-gray-400 mb-2">Work Types</label>
+                        <div className="flex flex-wrap gap-2">
+                          {workTypeOptions.map((workType) => (
+                            <button
+                              key={workType}
+                              onClick={() => isEditing && handleWorkTypeToggle(workType)}
+                              disabled={!isEditing}
+                              className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                                careerInterests.workTypes.includes(workType)
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:hover:bg-gray-700 disabled:opacity-50'
+                              }`}
+                            >
+                              {workType}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-gray-400 mb-2">Preferred Locations</label>
+                        <input
+                          type="text"
+                          value={careerInterests.locations}
+                          onChange={(e) => setCareerInterests({...careerInterests, locations: e.target.value})}
+                          disabled={!isEditing}
+                          placeholder="e.g. New York, Remote, San Francisco"
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      
+      {/* Notification */}
+      {notification.show && (
+        <div className={`fixed bottom-4 right-4 p-4 rounded-lg shadow-lg max-w-md ${
+          notification.type === 'success' ? 'bg-green-900/80 border border-green-500' : 'bg-red-900/80 border border-red-500'
+        }`}>
+          <p className={notification.type === 'success' ? 'text-green-300' : 'text-red-300'}>
+            {notification.message}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

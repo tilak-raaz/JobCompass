@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase.config';
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase.config';
 import { motion } from 'framer-motion';
 
 const SignInPage = () => {
@@ -10,13 +10,22 @@ const SignInPage = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate('/dashboard', { replace: true });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate('/account'); // Redirect to account page after successful sign in
     } catch (error) {
       setError('Failed to sign in: ' + error.message);
     }
@@ -26,10 +35,14 @@ const SignInPage = () => {
     setError('');
 
     try {
-      await signInWithPopup(auth, googleProvider);
-      navigate('/account'); // Redirect to account page after successful sign in with Google
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      await signInWithPopup(auth, provider);
     } catch (error) {
-      setError('Failed to sign in with Google: ' + error.message);
+      console.error('Google sign-in error:', error);
+      setError('Failed to sign in with Google. Please try again.');
     }
   };
 

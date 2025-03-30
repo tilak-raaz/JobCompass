@@ -2,22 +2,38 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { auth, db } from '../firebase.config';
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { useLocation } from 'react-router-dom';
 
-const JobApplicationTracker = () => {
+const JobApplicationTracker = ({ jobData }) => {
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newApplication, setNewApplication] = useState({
-    company: '',
-    position: '',
+    company: jobData?.company || '',
+    position: jobData?.title || '',
     status: 'applied',
     dateApplied: new Date().toISOString().split('T')[0],
     notes: '',
-    jobUrl: ''
+    jobUrl: jobData?.url || ''
   });
+  const location = useLocation();
 
   useEffect(() => {
     fetchApplications();
   }, []);
+
+  // Update form if jobData changes (from props)
+  useEffect(() => {
+    if (jobData) {
+      setNewApplication({
+        company: jobData.company || '',
+        position: jobData.title || '',
+        status: 'applied',
+        dateApplied: new Date().toISOString().split('T')[0],
+        notes: '',
+        jobUrl: jobData.url || ''
+      });
+    }
+  }, [jobData]);
 
   const fetchApplications = async () => {
     try {
@@ -117,7 +133,9 @@ const JobApplicationTracker = () => {
         animate={{ opacity: 1, y: 0 }}
         className="bg-gray-800 p-6 rounded-lg border border-gray-700"
       >
-        <h2 className="text-xl font-bold mb-4">Add New Application</h2>
+        <h2 className="text-xl font-bold mb-4">
+          {jobData ? 'Track This Job Application' : 'Add New Application'}
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <input
             type="text"
@@ -168,7 +186,7 @@ const JobApplicationTracker = () => {
           onClick={addApplication}
           className="mt-4 bg-gradient-to-r from-purple-600 to-blue-500 text-white px-6 py-2 rounded-md hover:opacity-90 transition duration-300"
         >
-          Add Application
+          {jobData ? 'Track This Job' : 'Add Application'}
         </button>
       </motion.div>
 
@@ -231,9 +249,9 @@ const JobApplicationTracker = () => {
                   href={application.jobUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 text-sm text-purple-400 hover:text-purple-300 inline-block"
+                  className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block"
                 >
-                  View Job Posting →
+                  View Job Posting
                 </a>
               )}
             </motion.div>
@@ -244,4 +262,4 @@ const JobApplicationTracker = () => {
   );
 };
 
-export default JobApplicationTracker; 
+export default JobApplicationTracker;
