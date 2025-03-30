@@ -12,6 +12,8 @@ import JobSearchComponent from "./pages/JobSearchComponents.jsx";
 import ProfileSetupPage from "./pages/ProfileSetupPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
+import Account from "./pages/Account";
+import ResumeUpload from "./pages/ResumeUpload";
 
 // Components
 import LoadingScreen from "./components/LoadingScreen";
@@ -67,6 +69,14 @@ function App() {
         <Route 
           path="/applications" 
           element={user ? <ApplicationsPage /> : <Navigate to="/signin" />} 
+        />
+        <Route 
+          path="/account" 
+          element={user ? <Account /> : <Navigate to="/signin" />} 
+        />
+        <Route 
+          path="/resume-upload" 
+          element={user ? <ResumeUpload /> : <Navigate to="/signin" />} 
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
