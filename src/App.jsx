@@ -5,19 +5,17 @@ import SignInPage from './pages/SignInPage';
 import ProfileSetupPage from './pages/ProfileSetupPage';
 import Account from './pages/Account';
 import ResumeUpload from './pages/ResumeUpload';
-import DailyChallenges from './pages/DailyChallenges';
 
 const App = () => {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Navigate to="/signup" />} />
+        <Route path="/" element={<Navigate to="/signin" />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/signin" element={<SignInPage />} />
         <Route path="/profile-setup" element={<ProfileSetupPage />} />
         <Route path="/account" element={<Account />} />
         <Route path="/resume-upload" element={<ResumeUpload />} />
-        <Route path="/daily-challenges" element={<DailyChallenges />} />
       </Routes>
     </Router>
   );

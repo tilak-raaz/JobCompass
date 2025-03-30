@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db, storage, functions } from '../firebase.config';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../firebase.config';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
 import { v4 as uuidv4 } from 'uuid';
 import Navbar from '../components/Navbar';
 import { saveUserData } from '../utils/firebaseHelpers';
+
+// Define the proxy server URL
+const PROXY_SERVER_URL = import.meta.env.VITE_PROXY_SERVER_URL || 'http://localhost:3000';
 
 const ResumeUpload = () => {
   const [file, setFile] = useState(null);
@@ -16,20 +17,9 @@ const ResumeUpload = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [enhancementResult, setEnhancementResult] = useState(null);
   const [error, setError] = useState('');
-  const [currentQueueId, setCurrentQueueId] = useState(null);
-  const [statusCheckerId, setStatusCheckerId] = useState(null);
   const [processingStatus, setProcessingStatus] = useState('');
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
-
-  // Clean up interval when component unmounts
-  useEffect(() => {
-    return () => {
-      if (statusCheckerId) {
-        clearInterval(statusCheckerId);
-      }
-    };
-  }, [statusCheckerId]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -85,119 +75,54 @@ const ResumeUpload = () => {
     
     try {
       const userId = auth.currentUser.uid;
-      const fileId = uuidv4();
-      const fileExtension = fileName.split('.').pop();
-      const storageRef = ref(storage, `resumes/${userId}/${fileId}.${fileExtension}`);
       
-      // Upload the file
-      await uploadBytes(storageRef, file);
-      setUploadProgress(50);
+      // Create form data for the file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('uid', userId);
       
-      // Get the download URL
-      const downloadURL = await getDownloadURL(storageRef);
+      // Upload file and get analysis in one step using the proxy server
+      setProcessingStatus('Uploading and analyzing your resume...');
+      setUploadProgress(30);
+      
+      const response = await fetch(`${PROXY_SERVER_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload and analyze resume');
+      }
+      
       setUploadProgress(70);
+      
+      const resultData = await response.json();
+      const { url: downloadURL, analysis } = resultData;
       
       // Save file reference in Firestore
       await saveUserData(userId, {
         resumeURL: downloadURL,
         resumeFileName: fileName,
         resumeUploadDate: new Date(),
+        resumeAnalyzed: true,
       });
       
       setUploadProgress(100);
-      
-      // Start AI enhancement process
-      enhanceResume(downloadURL, fileName);
-      
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      setError('Failed to upload file. Please try again.');
       setIsUploading(false);
-    }
-  };
-
-  const enhanceResume = async (fileUrl, fileName) => {
-    setIsProcessing(true);
-    setProcessingStatus('Initiating enhancement process...');
-    
-    try {
-      // Call the Cloud Function to initiate the process
-      const enhanceResumeFunction = httpsCallable(functions, 'enhanceResume');
-      const result = await enhanceResumeFunction({ 
-        fileUrl: fileUrl,
-        fileName: fileName
-      });
       
-      // Get the queue ID for status checking
-      const queueId = result.data.queueId;
-      setCurrentQueueId(queueId);
-      
-      // Start polling for status updates
-      startStatusPolling(queueId);
+      // Set the analysis result
+      setEnhancementResult(analysis);
       
     } catch (error) {
-      console.error("Error initiating resume enhancement:", error);
-      setError('Failed to start resume enhancement. Please try again.');
-      setIsProcessing(false);
+      console.error("Error uploading and analyzing file:", error);
+      setError('Failed to process your resume. Please try again.');
+      setIsUploading(false);
+      setProcessingStatus('');
     }
   };
 
-  // Function to poll for status updates
-  const startStatusPolling = (queueId) => {
-    const checkStatusFunction = httpsCallable(functions, 'checkResumeStatus');
-    const pollInterval = 3000; // Check every 3 seconds
-    
-    setProcessingStatus('Processing your resume...');
-    
-    const statusChecker = setInterval(async () => {
-      try {
-        const statusResult = await checkStatusFunction({ queueId });
-        const { status, enhancedResume, error: processingError } = statusResult.data;
-        
-        // Update the status message based on current status
-        if (status === 'processing') {
-          setProcessingStatus('AI is analyzing and enhancing your resume...');
-        }
-        
-        if (status === 'completed' && enhancedResume) {
-          // Process is complete
-          clearInterval(statusChecker);
-          setStatusCheckerId(null);
-          setEnhancementResult(enhancedResume);
-          setIsProcessing(false);
-          setProcessingStatus('');
-        } 
-        else if (status === 'error') {
-          // Process encountered an error
-          clearInterval(statusChecker);
-          setStatusCheckerId(null);
-          setError(`Enhancement failed: ${processingError || 'Unknown error'}`);
-          setIsProcessing(false);
-          setProcessingStatus('');
-        }
-        // Continue polling if status is 'pending' or 'processing'
-        
-      } catch (error) {
-        console.error("Error checking status:", error);
-        clearInterval(statusChecker);
-        setStatusCheckerId(null);
-        setError('Failed to check enhancement status. Please try again.');
-        setIsProcessing(false);
-        setProcessingStatus('');
-      }
-    }, pollInterval);
-    
-    // Store the interval ID for cleanup
-    setStatusCheckerId(statusChecker);
-  };
-
-  // Cancel processing if needed
   const cancelProcessing = () => {
-    if (statusCheckerId) {
-      clearInterval(statusCheckerId);
-      setStatusCheckerId(null);
-    }
-    
     setIsProcessing(false);
     setProcessingStatus('');
     setError('Processing canceled by user');
@@ -228,14 +153,14 @@ const ResumeUpload = () => {
               
               {/* Upload area */}
               <div 
-                className={`border-2 border-dashed rounded-lg p-8 mb-6 text-center transition-all ${file ? 'border-green-400 bg-green-400/10' : 'border-gray-400 hover:border-blue-400 bg-white/5 hover:bg-white/10'}`}
+                className={`border-2 border-dashed rounded-lg p-8 mb-6 text-center transition-all ${file ? 'border-green-400 bg-green-400/10' : 'border-gray-400 hover:border-blue-400 bg-white/5'}`}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
               >
                 {!file ? (
                   <div>
                     <svg className="mx-auto h-12 w-12 text-gray-300" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h12v12"></path>
                     </svg>
                     <p className="mt-4 text-gray-200">Drag and drop your resume here, or</p>
                     <button 
@@ -280,27 +205,12 @@ const ResumeUpload = () => {
               
               {isUploading && (
                 <div className="mb-6">
-                  <p className="text-gray-200 mb-2">Uploading... {uploadProgress}%</p>
+                  <p className="text-gray-200 mb-2">{processingStatus} {uploadProgress}%</p>
                   <div className="w-full bg-gray-700 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all" 
                       style={{ width: `${uploadProgress}%` }}
                     ></div>
-                  </div>
-                </div>
-              )}
-              
-              {isProcessing && (
-                <div className="mb-6">
-                  <p className="text-gray-200 mb-2">{processingStatus}</p>
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
-                    <button 
-                      onClick={cancelProcessing}
-                      className="text-red-300 hover:text-red-400 text-sm"
-                    >
-                      Cancel
-                    </button>
                   </div>
                   <p className="text-gray-400 text-sm mt-2">This may take up to a minute. Please don't close this page.</p>
                 </div>
@@ -309,10 +219,10 @@ const ResumeUpload = () => {
               <div className="flex justify-center">
                 <button 
                   onClick={handleUpload}
-                  disabled={!file || isUploading || isProcessing}
-                  className={`px-6 py-3 rounded-md text-white font-medium text-lg transition-colors ${(!file || isUploading || isProcessing) ? 'bg-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'}`}
+                  disabled={!file || isUploading}
+                  className={`px-6 py-3 rounded-md text-white font-medium text-lg transition-colors ${(!file || isUploading) ? 'bg-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600'}`}
                 >
-                  {isUploading || isProcessing ? 'Processing...' : 'Enhance My Resume'}
+                  {isUploading ? 'Processing...' : 'Enhance My Resume'}
                 </button>
               </div>
               
@@ -321,8 +231,10 @@ const ResumeUpload = () => {
                 <div className="mt-12 bg-white/10 rounded-lg p-6">
                   <h2 className="text-2xl font-bold text-white mb-4">AI Enhancement Results</h2>
                   <div className="prose prose-invert max-w-none">
-                    <div className="bg-white/5 rounded-md p-6 text-gray-200 whitespace-pre-line">
-                      {enhancementResult}
+                    <div className="bg-white/5 rounded-md p-6 text-gray-200">
+                      {enhancementResult.split('\n').map((line, index) => (
+                        <p key={index}>{line}</p>
+                      ))}
                     </div>
                   </div>
                   <div className="mt-6 flex flex-wrap gap-4 justify-between">
@@ -341,13 +253,13 @@ const ResumeUpload = () => {
                         const element = document.createElement("a");
                         const file = new Blob([enhancementResult], {type: 'text/plain'});
                         element.href = URL.createObjectURL(file);
-                        element.download = "enhanced_resume.txt";
+                        element.download = "enhanced_resume_feedback.txt";
                         document.body.appendChild(element);
                         element.click();
                       }}
                       className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 rounded-md text-white font-medium transition-colors"
                     >
-                      Download Enhanced Resume
+                      Download Feedback
                     </button>
                     <button
                       onClick={() => {
@@ -365,7 +277,7 @@ const ResumeUpload = () => {
               )}
               
               {/* Features section */}
-              {!enhancementResult && !isProcessing && !isUploading && (
+              {!enhancementResult && !isUploading && (
                 <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white/5 p-6 rounded-lg">
                     <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center mb-4">
@@ -373,18 +285,18 @@ const ResumeUpload = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">AI-Powered Analysis</h3>
-                    <p className="text-gray-300">Our AI analyzes your resume against top industry standards to highlight strengths and areas for improvement.</p>
+                    <h3 className="text-xl font-bold text-white mb-2">GPT-4 Analysis</h3>
+                    <p className="text-gray-300">Our advanced AI analyzes your resume against top industry standards and provides detailed, personalized feedback.</p>
                   </div>
                   
                   <div className="bg-white/5 p-6 rounded-lg">
                     <div className="w-12 h-12 bg-gradient-to-r from-pink-600 to-red-600 rounded-full flex items-center justify-center mb-4">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100-4m0 4v2m0-6V4"></path>
                       </svg>
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Personalized Recommendations</h3>
-                    <p className="text-gray-300">Get tailored suggestions to improve wording, highlight achievements, and address potential red flags.</p>
+                    <h3 className="text-xl font-bold text-white mb-2">Instant Improvements</h3>
+                    <p className="text-gray-300">Get specific rewrites for weak sections and actionable suggestions to make your resume stand out.</p>
                   </div>
                   
                   <div className="bg-white/5 p-6 rounded-lg">
@@ -394,13 +306,13 @@ const ResumeUpload = () => {
                       </svg>
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">ATS Optimization</h3>
-                    <p className="text-gray-300">Ensure your resume passes through Applicant Tracking Systems with proper keyword optimization and formatting.</p>
+                    <p className="text-gray-300">Ensure your resume passes through Applicant Tracking Systems with proper keyword optimization and formatting advice.</p>
                   </div>
                 </div>
               )}
               
               <div className="mt-8 text-sm text-gray-400 text-center">
-                <p>Your resume is processed securely. We don't store the content of your resume permanently.</p>
+                <p>Your resume is processed securely using OpenAI's GPT-4. We don't store the content of your resume permanently.</p>
               </div>
             </div>
           </div>
